@@ -1,8 +1,10 @@
+// src/pages/Login.tsx
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { LoginSchema, type LoginSchemaType } from "../lib/validators";
 import { useAuthStore } from "../store/auth";
 import { useNavigate, useLocation, Link } from "react-router-dom";
+import Swal from "sweetalert2";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -10,7 +12,11 @@ export default function Login() {
   const redirectTo = location.state?.redirectTo || "/feed";
 
   const { login, loading } = useAuthStore();
-  const { register, handleSubmit, formState: { errors } } = useForm<LoginSchemaType>({
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<LoginSchemaType>({
     resolver: zodResolver(LoginSchema),
     defaultValues: { usernameOrEmail: "", password: "" },
   });
@@ -18,9 +24,29 @@ export default function Login() {
   const onSubmit = async (data: LoginSchemaType) => {
     try {
       await login(data);
+
+      await Swal.fire({
+        icon: "success",
+        title: "Welcome back!",
+        text: "You are now signed in.",
+        confirmButtonColor: "#3B82F6", // secondary
+      });
+
       navigate(redirectTo, { replace: true });
     } catch (e: any) {
-      alert(e?.response?.data?.message ?? "Login failed"); // replace with toast()
+      const status = e?.response?.status;
+      const msg =
+        e?.response?.data?.message ||
+        (status === 401
+          ? "Invalid credentials. Please check your username/email and password."
+          : "Login failed. Please try again.");
+
+      Swal.fire({
+        icon: "error",
+        title: "Login failed",
+        text: msg,
+        confirmButtonColor: "#3B82F6",
+      });
     }
   };
 
@@ -36,9 +62,12 @@ export default function Login() {
             type="text"
           />
           {errors.usernameOrEmail && (
-            <p className="mt-1 text-sm text-red-600">{errors.usernameOrEmail.message}</p>
+            <p className="mt-1 text-sm text-red-600">
+              {errors.usernameOrEmail.message}
+            </p>
           )}
         </div>
+
         <div>
           <label className="block text-sm font-medium">Password</label>
           <input
@@ -50,6 +79,7 @@ export default function Login() {
             <p className="mt-1 text-sm text-red-600">{errors.password.message}</p>
           )}
         </div>
+
         <button
           type="submit"
           disabled={loading}
@@ -58,6 +88,7 @@ export default function Login() {
           {loading ? "Signing in..." : "Login"}
         </button>
       </form>
+
       <p className="mt-4 text-sm text-primary/70">
         Don’t have an account?{" "}
         <Link to="/signup" className="text-secondary hover:underline">
