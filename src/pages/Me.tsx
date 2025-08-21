@@ -26,11 +26,12 @@ export default function Me() {
     refetch,
   } = useInfiniteQuery({
     queryKey: ["myVideos", userId, PAGE_SIZE],
-    queryFn: ({ pageParam = 1 }) =>
-      listVideos({ page: pageParam, limit: PAGE_SIZE, uploaderId: userId }),
+    queryFn: ({ pageParam = 1 }: { pageParam?: number }) =>
+      listVideos({ page: Number(pageParam), limit: PAGE_SIZE, uploaderId: userId }),
     getNextPageParam: (lastPage) =>
       lastPage?.hasMore ? (lastPage.page ?? 1) + 1 : undefined,
     enabled: Boolean(userId),
+    initialPageParam: 1,
   });
 
   if (isError) {

@@ -19,30 +19,10 @@ type CommentForm = z.infer<typeof CommentSchema>;
 
 const EditSchema = z.object({
   title: z.string().min(3, "Min 3 characters"),
-  description: z
-    .string()
-    .max(2000, "Max 2000 chars")
-    .optional()
-    .or(z.literal(""))
-    .transform((v) => v || undefined),
-  genre: z
-    .string()
-    .max(120, "Max 120 chars")
-    .optional()
-    .or(z.literal(""))
-    .transform((v) => v || undefined),
-  producer: z
-    .string()
-    .max(120, "Max 120 chars")
-    .optional()
-    .or(z.literal(""))
-    .transform((v) => v || undefined),
-  age_rating: z
-    .string()
-    .max(20, "Max 20 chars")
-    .optional()
-    .or(z.literal(""))
-    .transform((v) => v || undefined),
+  description: z.string().max(2000, "Max 2000 chars").optional(),
+  genre: z.string().max(120, "Max 120 chars").optional(),
+  producer: z.string().max(120, "Max 120 chars").optional(),
+  age_rating: z.string().max(20, "Max 20 chars").optional(),
   visibility: z.enum(["public", "unlisted", "private"]),
 });
 type EditForm = z.infer<typeof EditSchema>;
@@ -149,7 +129,13 @@ export default function VideoDetail() {
 
   // --- Edit video
   const editMut = useMutation({
-    mutationFn: (payload: EditForm) => updateVideo(id, payload),
+    mutationFn: (payload: EditForm) => updateVideo(id, {
+      ...payload,
+      description: payload.description || undefined,
+      genre: payload.genre || undefined,
+      producer: payload.producer || undefined,
+      age_rating: payload.age_rating || undefined,
+    }),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["video", id] });
       Swal.fire({
@@ -174,7 +160,6 @@ export default function VideoDetail() {
     register,
     handleSubmit,
     reset,
-    formState: { errors },
   } = useForm<CommentForm>({
     resolver: zodResolver(CommentSchema),
     defaultValues: { comment: "" },
@@ -303,9 +288,9 @@ export default function VideoDetail() {
             <button
               type="submit"
               className="rounded bg-secondary px-4 py-2 text-white hover:opacity-90"
-              disabled={addMut.isLoading}
+              disabled={addMut.isPending}
             >
-              {addMut.isLoading ? "Posting…" : "Post"}
+              {addMut.isPending ? "Posting…" : "Post"}
             </button>
           </form>
         ) : (
@@ -341,7 +326,7 @@ export default function VideoDetail() {
           initial={video}
           onClose={() => setEditOpen(false)}
           onSave={(payload) => editMut.mutate(payload)}
-          saving={editMut.isLoading}
+          saving={editMut.isPending}
         />
       )}
     </section>
@@ -363,7 +348,7 @@ function EditModal({
   const {
     register,
     handleSubmit,
-    formState: { errors, isDirty },
+    formState: { isDirty },
   } = useForm<EditForm>({
     resolver: zodResolver(EditSchema),
     defaultValues: {
@@ -411,9 +396,6 @@ function EditModal({
               {...register("title")}
               className="mt-1 w-full rounded border border-neutral-dark px-3 py-2 focus:outline-none focus:ring-2 focus:ring-secondary"
             />
-            {errors.title && (
-              <p className="mt-1 text-sm text-red-600">{errors.title.message}</p>
-            )}
           </div>
 
           <div>
@@ -423,9 +405,6 @@ function EditModal({
               rows={3}
               className="mt-1 w-full rounded border border-neutral-dark px-3 py-2 focus:outline-none focus:ring-2 focus:ring-secondary"
             />
-            {errors.description && (
-              <p className="mt-1 text-sm text-red-600">{errors.description.message}</p>
-            )}
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -435,9 +414,6 @@ function EditModal({
                 {...register("genre")}
                 className="mt-1 w-full rounded border border-neutral-dark px-3 py-2 focus:outline-none focus:ring-2 focus:ring-secondary"
               />
-              {errors.genre && (
-                <p className="mt-1 text-sm text-red-600">{errors.genre.message}</p>
-              )}
             </div>
 
             <div>
@@ -446,9 +422,6 @@ function EditModal({
                 {...register("producer")}
                 className="mt-1 w-full rounded border border-neutral-dark px-3 py-2 focus:outline-none focus:ring-2 focus:ring-secondary"
               />
-              {errors.producer && (
-                <p className="mt-1 text-sm text-red-600">{errors.producer.message}</p>
-              )}
             </div>
           </div>
 
@@ -459,9 +432,6 @@ function EditModal({
                 {...register("age_rating")}
                 className="mt-1 w-full rounded border border-neutral-dark px-3 py-2 focus:outline-none focus:ring-2 focus:ring-secondary"
               />
-              {errors.age_rating && (
-                <p className="mt-1 text-sm text-red-600">{errors.age_rating.message}</p>
-              )}
             </div>
 
             <div>
@@ -474,9 +444,6 @@ function EditModal({
                 <option value="unlisted">Unlisted</option>
                 <option value="private">Private</option>
               </select>
-              {errors.visibility && (
-                <p className="mt-1 text-sm text-red-600">{errors.visibility.message}</p>
-              )}
             </div>
           </div>
 

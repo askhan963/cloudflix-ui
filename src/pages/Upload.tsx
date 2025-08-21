@@ -20,16 +20,17 @@ const ACCEPTED = [
 
 const UploadSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters"),
-  description: z.string().max(2000, "Max 2000 characters").optional().or(z.literal("")).transform(v => v || undefined),
-  genre: z.string().max(120, "Max 120 characters").optional().or(z.literal("")).transform(v => v || undefined),
-  producer: z.string().max(120, "Max 120 characters").optional().or(z.literal("")).transform(v => v || undefined),
-  age_rating: z.string().max(20, "Max 20 characters").optional().or(z.literal("")).transform(v => v || undefined),
-  visibility: z.enum(["public", "unlisted", "private"]).default("public"),
+  description: z.string().max(2000, "Max 2000 characters").optional(),
+  genre: z.string().max(120, "Max 120 characters").optional(),
+  producer: z.string().max(120, "Max 120 characters").optional(),
+  age_rating: z.string().max(20, "Max 20 characters").optional(),
+  visibility: z.enum(["public", "unlisted", "private"]),
   file: z
     .custom<File>((v) => v instanceof File, "File is required")
     .refine((f) => f && ACCEPTED.includes(f.type), "Unsupported file type. Use MP4/WebM/OGG/MOV/MKV.")
     .refine((f) => f && f.size <= MAX_BYTES, `File too large. Max ${MAX_MB}MB`),
 });
+
 type UploadForm = z.infer<typeof UploadSchema>;
 
 export default function Upload() {
@@ -52,7 +53,7 @@ export default function Upload() {
       genre: "",
       producer: "",
       age_rating: "",
-      visibility: "public",
+      visibility: "public" as const,
     },
   });
 
@@ -65,10 +66,10 @@ export default function Upload() {
         {
           file: values.file as File,
           title: values.title,
-          description: values.description,
-          genre: values.genre,
-          producer: values.producer,
-          age_rating: values.age_rating,
+          description: values.description || undefined,
+          genre: values.genre || undefined,
+          producer: values.producer || undefined,
+          age_rating: values.age_rating || undefined,
           visibility: values.visibility,
         },
         (pct) => setProgress(pct)
