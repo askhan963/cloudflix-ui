@@ -16,6 +16,15 @@ const PAGE_SIZE = 5;
 
 /* ------------------------------ Page ------------------------------ */
 export default function Home() {
+  // Hide outer/page scrollbar while on the feed; restore on unmount
+  useEffect(() => {
+    const prev = document.documentElement.style.overflow;
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.documentElement.style.overflow = prev;
+    };
+  }, []);
+
   const {
     data,
     isLoading,
@@ -29,6 +38,7 @@ export default function Home() {
     queryFn: ({ pageParam = 1 }) =>
       listVideos({ page: pageParam, limit: PAGE_SIZE, visibility: "public" }),
     getNextPageParam: (last) => (last?.hasMore ? (last.page ?? 1) + 1 : undefined),
+    initialPageParam: 1,
   });
 
   useEffect(() => {
@@ -46,8 +56,8 @@ export default function Home() {
   );
 
   return (
-    <section className="h-[calc(100vh-4rem)] md:h-[calc(100vh-5.5rem)]">
-      {/* Container with vertical snap like TikTok */}
+    // Lock the section height and hide any external scroll
+    <section className="h-[calc(100vh-4rem)] overflow-hidden md:h-[calc(100vh-5.5rem)]">
       {isLoading ? (
         <ShortsSkeleton />
       ) : items.length === 0 ? (
@@ -65,10 +75,13 @@ export default function Home() {
       ) : (
         <div
           className="relative mx-auto h-full max-w-[480px] snap-y snap-mandatory overflow-y-scroll rounded-2xl border border-neutral-dark bg-black md:max-w-[540px]"
-          // fetch more when near the end
           onScroll={(e) => {
             const el = e.currentTarget;
-            if (hasNextPage && !isFetchingNextPage && el.scrollTop + el.clientHeight * 2 > el.scrollHeight) {
+            if (
+              hasNextPage &&
+              !isFetchingNextPage &&
+              el.scrollTop + el.clientHeight * 2 > el.scrollHeight
+            ) {
               fetchNextPage();
             }
           }}
@@ -94,7 +107,7 @@ function Short({ video }: { video: Video }) {
   const qc = useQueryClient();
   const isOwner = user?.id === video.uploader_id;
 
-  const [showComments, setShowComments] = useState(false);
+  const [showComments, setShowComments] = useState<boolean>(false);
 
   // Autoplay/pause with IntersectionObserver
   const vref = useRef<HTMLVideoElement | null>(null);
@@ -117,23 +130,17 @@ function Short({ video }: { video: Video }) {
     return () => io.disconnect();
   }, []);
 
-  // Comments
-  const commentsQ = useQuery({
-    queryKey: ["comments", video.id],
-    queryFn: () => listComments(video.id),
-    enabled: showComments, // lazy load when opened
-  });
-
   // Rate (optimistic)
   const rateMut = useMutation({
     mutationFn: (rating: number) => rateVideo(video.id, { rating }),
     onMutate: async (rating) => {
       await qc.cancelQueries({ queryKey: ["videos", "shorts", PAGE_SIZE] });
-      const prevDetail = qc.getQueryData<{ ok: boolean; video: Video }>(["video", video.id]);
-      // optimistic: add one rating into average
+      const prevDetail = qc.getQueryData<{ ok: boolean; video: Video }>([
+        "video",
+        video.id,
+      ]);
       const newCount = video.rating_count + 1;
       const newAvg = (video.avg_rating * video.rating_count + rating) / newCount;
-      // set local cache for detailed (if any)
       if (prevDetail?.video) {
         qc.setQueryData(["video", video.id], {
           ok: true,
@@ -205,13 +212,14 @@ function Short({ video }: { video: Video }) {
         </p>
       </div>
 
-      {/* Comments sheet */}
-      <CommentsSheet
-        open={showComments}
-        onClose={() => setShowComments(false)}
-        videoId={video.id}
-        canModerate={isOwner}
-      />
+      {/* Comments sheet — only render when open */}
+      {showComments && (
+        <CommentsSheet
+          onClose={() => setShowComments(false)}
+          videoId={video.id}
+          canModerate={isOwner}
+        />
+      )}
     </article>
   );
 }
@@ -223,12 +231,10 @@ const CommentSchema = z.object({
 type CommentForm = z.infer<typeof CommentSchema>;
 
 function CommentsSheet({
-  open,
   onClose,
   videoId,
   canModerate,
 }: {
-  open: boolean;
   onClose: () => void;
   videoId: number;
   canModerate: boolean;
@@ -239,10 +245,14 @@ function CommentsSheet({
   const commentsQ = useQuery({
     queryKey: ["comments", videoId],
     queryFn: () => listComments(videoId),
-    enabled: open,
   });
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<CommentForm>({
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<CommentForm>({
     resolver: zodResolver(CommentSchema),
     defaultValues: { comment: "" },
   });
@@ -279,21 +289,16 @@ function CommentsSheet({
   });
 
   return (
-    <div
-      aria-hidden={!open}
-      className={`pointer-events-none absolute inset-0 z-20 transform transition ${
-        open ? "pointer-events-auto" : "translate-y-full"
-      }`}
-    >
+    <div className="absolute inset-0 z-20">
       {/* Backdrop */}
-      <div
+      <button
         className="absolute inset-0 bg-black/50"
         onClick={onClose}
         aria-label="Close comments"
       />
 
       {/* Sheet */}
-      <div className="absolute bottom-0 left-0 right-0 max-h-[70%] rounded-t-2xl bg-white p-4 text-primary shadow-xl">
+      <div className="absolute bottom-0 left-0 right-0 max-h-[70%] overflow-hidden rounded-t-2xl bg-white p-4 text-primary shadow-xl">
         <div className="mx-auto mb-3 h-1.5 w-12 rounded bg-neutral-dark" />
         <div className="flex items-center justify-between">
           <h4 className="text-lg font-semibold">Comments</h4>
@@ -319,14 +324,17 @@ function CommentsSheet({
             <button
               type="submit"
               className="rounded bg-secondary px-3 py-2 text-white hover:opacity-90 disabled:opacity-60"
-              disabled={addMut.isLoading}
+              disabled={addMut.status === "pending"}
             >
-              {addMut.isLoading ? "Posting…" : "Post"}
+              {addMut.status === "pending" ? "Posting…" : "Post"}
             </button>
           </form>
         ) : (
           <p className="mt-3 text-sm text-primary/70">
-            <Link to="/login" className="text-secondary underline">Login</Link> to comment
+            <Link to="/login" className="text-secondary underline">
+              Login
+            </Link>{" "}
+            to comment
           </p>
         )}
         {errors.comment && (
@@ -334,7 +342,7 @@ function CommentsSheet({
         )}
 
         {/* List */}
-        <div className="mt-4 space-y-2 overflow-y-auto">
+        <div className="mt-4 max-h-[45vh] space-y-2 overflow-y-auto">
           {commentsQ.isLoading ? (
             <p className="text-primary/60">Loading…</p>
           ) : (commentsQ.data?.data?.length ?? 0) === 0 ? (

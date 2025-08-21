@@ -3,17 +3,49 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Swal from "sweetalert2";
 import { useAuthStore } from "../store/auth";
 import type { Video, Comment } from "../lib/types";
-import { getVideo, removeVideo } from "../api/videos";
+import { getVideo, removeVideo, updateVideo } from "../api/videos";
 import { listComments, addComment, removeComment } from "../api/comments";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { rateVideo } from "../api/ratings";
+import { useState } from "react";
 
+/* ---------- Schemas ---------- */
 const CommentSchema = z.object({
   comment: z.string().min(1, "Write a comment").max(500, "Max 500 chars"),
 });
 type CommentForm = z.infer<typeof CommentSchema>;
+
+const EditSchema = z.object({
+  title: z.string().min(3, "Min 3 characters"),
+  description: z
+    .string()
+    .max(2000, "Max 2000 chars")
+    .optional()
+    .or(z.literal(""))
+    .transform((v) => v || undefined),
+  genre: z
+    .string()
+    .max(120, "Max 120 chars")
+    .optional()
+    .or(z.literal(""))
+    .transform((v) => v || undefined),
+  producer: z
+    .string()
+    .max(120, "Max 120 chars")
+    .optional()
+    .or(z.literal(""))
+    .transform((v) => v || undefined),
+  age_rating: z
+    .string()
+    .max(20, "Max 20 chars")
+    .optional()
+    .or(z.literal(""))
+    .transform((v) => v || undefined),
+  visibility: z.enum(["public", "unlisted", "private"]),
+});
+type EditForm = z.infer<typeof EditSchema>;
 
 export default function VideoDetail() {
   const { id: idParam } = useParams();
@@ -21,6 +53,7 @@ export default function VideoDetail() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { user, accessToken } = useAuthStore();
+  const [editOpen, setEditOpen] = useState(false);
 
   // --- Video query
   const videoQ = useQuery({
@@ -44,7 +77,7 @@ export default function VideoDetail() {
       const prev = qc.getQueryData<{ ok: boolean; video: Video }>(["video", id]);
       if (prev?.video) {
         const v = prev.video;
-        const newCount = v.rating_count + 1; // naive; server will correct
+        const newCount = v.rating_count + 1;
         const newAvg = (v.avg_rating * v.rating_count + rating) / newCount;
         qc.setQueryData(["video", id], {
           ok: prev.ok,
@@ -114,8 +147,35 @@ export default function VideoDetail() {
     },
   });
 
+  // --- Edit video
+  const editMut = useMutation({
+    mutationFn: (payload: EditForm) => updateVideo(id, payload),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["video", id] });
+      Swal.fire({
+        icon: "success",
+        title: "Video updated",
+        confirmButtonColor: "#3B82F6",
+      });
+      setEditOpen(false);
+    },
+    onError: (e: any) => {
+      Swal.fire({
+        icon: "error",
+        title: "Update failed",
+        text: e?.response?.data?.message || e?.message || "Try again.",
+        confirmButtonColor: "#3B82F6",
+      });
+    },
+  });
+
   // --- Comment form
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<CommentForm>({
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<CommentForm>({
     resolver: zodResolver(CommentSchema),
     defaultValues: { comment: "" },
   });
@@ -138,7 +198,10 @@ export default function VideoDetail() {
     return (
       <section className="rounded-xl border border-neutral-dark bg-white p-8 shadow-sm">
         <h1 className="text-2xl font-bold">Video not found</h1>
-        <Link to="/feed" className="mt-4 inline-block rounded bg-secondary px-4 py-2 text-white hover:opacity-90">
+        <Link
+          to="/feed"
+          className="mt-4 inline-block rounded bg-secondary px-4 py-2 text-white hover:opacity-90"
+        >
           Back to Feed
         </Link>
       </section>
@@ -181,15 +244,9 @@ export default function VideoDetail() {
           {/* Owner actions */}
           {isOwner && (
             <div className="flex gap-2">
-              {/* Implement edit flow later */}
               <button
                 className="rounded border border-primary px-3 py-2 text-sm hover:bg-neutral-dark"
-                onClick={() => Swal.fire({
-                  title: "Edit coming soon",
-                  text: "PATCH /videos/:id will be wired next.",
-                  icon: "info",
-                  confirmButtonColor: "#3B82F6",
-                })}
+                onClick={() => setEditOpen(true)}
               >
                 Edit
               </button>
@@ -219,15 +276,14 @@ export default function VideoDetail() {
           <RatingStars
             average={video.avg_rating}
             count={video.rating_count}
-            onRate={
-              accessToken
-                ? (n) => rateMut.mutate(n)
-                : undefined
-            }
+            onRate={accessToken ? (n) => rateMut.mutate(n) : undefined}
           />
           {!accessToken && (
             <span className="text-sm text-primary/60">
-              <Link to="/login" className="text-secondary underline">Login</Link> to rate
+              <Link to="/login" className="text-secondary underline">
+                Login
+              </Link>{" "}
+              to rate
             </span>
           )}
         </div>
@@ -254,7 +310,10 @@ export default function VideoDetail() {
           </form>
         ) : (
           <p className="mt-3 text-sm text-primary/60">
-            <Link to="/login" className="text-secondary underline">Login</Link> to comment
+            <Link to="/login" className="text-secondary underline">
+              Login
+            </Link>{" "}
+            to comment
           </p>
         )}
 
@@ -275,7 +334,171 @@ export default function VideoDetail() {
           )}
         </div>
       </div>
+
+      {/* EDIT MODAL */}
+      {isOwner && editOpen && (
+        <EditModal
+          initial={video}
+          onClose={() => setEditOpen(false)}
+          onSave={(payload) => editMut.mutate(payload)}
+          saving={editMut.isLoading}
+        />
+      )}
     </section>
+  );
+}
+
+/* ---------- Edit Modal ---------- */
+function EditModal({
+  initial,
+  onClose,
+  onSave,
+  saving,
+}: {
+  initial: Video;
+  onClose: () => void;
+  onSave: (payload: EditForm) => void;
+  saving: boolean;
+}) {
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isDirty },
+  } = useForm<EditForm>({
+    resolver: zodResolver(EditSchema),
+    defaultValues: {
+      title: initial.title,
+      description: initial.description ?? "",
+      genre: initial.genre ?? "",
+      producer: initial.producer ?? "",
+      age_rating: initial.age_rating ?? "",
+      visibility: initial.visibility,
+    },
+  });
+
+  const submit = (d: EditForm) => {
+    if (!isDirty) {
+      onClose();
+      return;
+    }
+    onSave(d);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center md:items-center">
+      {/* backdrop */}
+      <div
+        className="absolute inset-0 bg-black/50"
+        onClick={onClose}
+        aria-label="Close edit"
+      />
+      {/* sheet/card */}
+      <div className="relative z-10 w-full max-w-xl rounded-t-2xl bg-white p-6 shadow-xl md:rounded-2xl">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Edit video</h3>
+          <button
+            onClick={onClose}
+            className="rounded border border-primary px-2 py-1 text-sm hover:bg-neutral-dark"
+          >
+            Close
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit(submit)} className="mt-4 grid gap-4">
+          <div>
+            <label className="block text-sm font-medium">Title</label>
+            <input
+              {...register("title")}
+              className="mt-1 w-full rounded border border-neutral-dark px-3 py-2 focus:outline-none focus:ring-2 focus:ring-secondary"
+            />
+            {errors.title && (
+              <p className="mt-1 text-sm text-red-600">{errors.title.message}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium">Description</label>
+            <textarea
+              {...register("description")}
+              rows={3}
+              className="mt-1 w-full rounded border border-neutral-dark px-3 py-2 focus:outline-none focus:ring-2 focus:ring-secondary"
+            />
+            {errors.description && (
+              <p className="mt-1 text-sm text-red-600">{errors.description.message}</p>
+            )}
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="block text-sm font-medium">Genre</label>
+              <input
+                {...register("genre")}
+                className="mt-1 w-full rounded border border-neutral-dark px-3 py-2 focus:outline-none focus:ring-2 focus:ring-secondary"
+              />
+              {errors.genre && (
+                <p className="mt-1 text-sm text-red-600">{errors.genre.message}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium">Producer</label>
+              <input
+                {...register("producer")}
+                className="mt-1 w-full rounded border border-neutral-dark px-3 py-2 focus:outline-none focus:ring-2 focus:ring-secondary"
+              />
+              {errors.producer && (
+                <p className="mt-1 text-sm text-red-600">{errors.producer.message}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="block text-sm font-medium">Age rating</label>
+              <input
+                {...register("age_rating")}
+                className="mt-1 w-full rounded border border-neutral-dark px-3 py-2 focus:outline-none focus:ring-2 focus:ring-secondary"
+              />
+              {errors.age_rating && (
+                <p className="mt-1 text-sm text-red-600">{errors.age_rating.message}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium">Visibility</label>
+              <select
+                {...register("visibility")}
+                className="mt-1 w-full rounded border border-neutral-dark px-3 py-2 focus:outline-none focus:ring-2 focus:ring-secondary"
+              >
+                <option value="public">Public</option>
+                <option value="unlisted">Unlisted</option>
+                <option value="private">Private</option>
+              </select>
+              {errors.visibility && (
+                <p className="mt-1 text-sm text-red-600">{errors.visibility.message}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-2 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded border border-primary px-4 py-2 text-sm hover:bg-neutral-dark"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="rounded bg-secondary px-4 py-2 text-white hover:opacity-90 disabled:opacity-60"
+            >
+              {saving ? "Saving…" : "Save changes"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
@@ -290,7 +513,6 @@ function RatingStars({
   count: number;
   onRate?: (n: number) => void;
 }) {
-  // show 5 clickable stars; half-stars via text fallback is fine for MVP
   const stars = [1, 2, 3, 4, 5];
   return (
     <div className="flex items-center gap-2">
