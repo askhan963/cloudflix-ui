@@ -291,7 +291,7 @@ export default function Landing() {
           <div className="space-y-4">
             {FAQ.map((item, index) => (
               <details
-                key={item.q}
+                key={index}
                 className="group rounded-2xl border border-neutral-dark/20 bg-white/80 backdrop-blur-sm p-6 shadow-lg hover:shadow-xl transition-all"
               >
                 <summary className="cursor-pointer list-none font-semibold text-lg flex justify-between items-center">
