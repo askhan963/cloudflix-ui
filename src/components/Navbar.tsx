@@ -28,7 +28,10 @@ export default function Navbar() {
         {/* Brand */}
         <div className="flex items-center gap-2">
           <Link to="/" className="flex items-center gap-2">
-            <span className="inline-block h-6 w-6 rounded bg-secondary" aria-hidden />
+            <span
+              className="inline-block h-6 w-6 rounded bg-secondary"
+              aria-hidden
+            />
             <span className="text-lg font-extrabold tracking-tight text-primary">
               CloudFlix
             </span>
@@ -37,9 +40,6 @@ export default function Navbar() {
 
         {/* Desktop nav */}
         <nav className="hidden items-center gap-2 md:flex">
-          <NavLink to="/feed" className={activeNav}>
-            Feed
-          </NavLink>
           {isCreator && (
             <NavLink to="/upload" className={activeNav}>
               Upload
@@ -47,6 +47,9 @@ export default function Navbar() {
           )}
           {isAuthed ? (
             <>
+              <NavLink to="/feed" className={activeNav}>
+                Feed
+              </NavLink>
               <NavLink to="/me" className={activeNav}>
                 Me
               </NavLink>
